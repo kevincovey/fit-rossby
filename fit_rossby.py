@@ -1,12 +1,40 @@
+# Created by Stephanie T. Douglas in 2014
+
 import numpy as np
-import get_data, emcee, triangle, cPickle
-from scipy.optimize import curve_fit
+import cPickle
+import emcee
 import matplotlib.pyplot as plt
-from emcee_plot import emcee_plot
 
 
+def quantile(x,quantiles):
+    """ Calculates quantiles - taken from DFM's triangle.py """
+    xsorted = sorted(x)
+    qvalues = [xsorted[int(q * len(xsorted))] for q in quantiles]
+    return zip(quantiles,qvalues)
 
 def rossby_model(p,Ro):
+    """
+    computes the saturated/unsaturated activity model for a given parameter set
+
+    For Ro < turnover, the model values are equal to the saturation level 
+    For Ro >= turnover, the model values follow a power-law with slope beta
+
+    Input
+    -----
+    p : array-like (3)
+        parameters for the model: saturation level, turnover, beta
+
+    Ro : array-like 
+        Rossby number values. The model L_{whatever}/L_{bol} values will 
+        be computed for these Rossby numbers
+
+    Output
+    ------
+    y : numpy.ndarray (same size as Ro)
+        Model L_{whatever}/L_{bol} values corresponding to input Ro
+
+    """
+
     sat_level,turnover,beta = p[0],p[1],p[2]
     y = np.ones(len(Ro))*sat_level
 
@@ -17,151 +45,171 @@ def rossby_model(p,Ro):
     return y
 
 
-def lnprob(p,rossby_no,lha_lbol,err_ll):    
+def lnprob(p,rossby_no,lha_lbol,err_ll): 
+    """ 
+    Calculates the natural log of the posterior probability for a given model
+
+    The probability calculation uses chi-squared.
+
+    Input
+    -----
+    p : array-like (3)
+        parameters for the model: saturation level, turnover, beta
+
+    rossby_no : array-like 
+        Data Rossby number values
+
+    lha_lbol : array-like 
+        Data activity values (L_{whatever}/L_{bol} - in my case 
+        I was using L_{Halpha}/L_{bol})
+
+    error_ll : array-like
+        Uncertainties in the data activity values.
+
+    Output
+    ------
+    lnprob : float
+       natural log of the posterior probability of p given the data
+
+    """
+
     sat_level,turnover,beta = p[0],p[1],p[2]
     if ((sat_level>1e-1) or (sat_level<1e-8) or (turnover<0.001)
         or (turnover>2) or (beta>2) or (beta<-6)):
         return -np.inf
 
     model_ll = rossby_model(p,rossby_no)
-#    plt.plot(rossby_no,model_ll,'r-',alpha=0.1)
     ln_prob = -0.5*(np.sum((lha_lbol-model_ll)**2/(err_ll**2)))
-#    print ln_prob
     return ln_prob
 
 
-pdat,pobs,pobsnr,pobsr = get_data.get_data('P')
-hdat,hobs,hobsnr,hobsr = get_data.get_data('H')
 
-pros = pdat.field('ROSSBY')
-hros = hdat.field('ROSSBY')
-peqw,pueqw = pdat.field('AVG_EQW'),pdat.field('AVG_EQW_ERR')
-pll,pull = pdat.field('AVG_LHA'),pdat.field('AVG_LHA_ERR')
-heqw,hueqw = hdat.field('AVG_EQW'),hdat.field('AVG_EQW_ERR')
-hll,hull = hdat.field('AVG_LHA'),hdat.field('AVG_LHA_ERR')
-pbin = (pdat.field('BINARY')>0)
-hbin = (hdat.field('BINARY')>0)
-pmass = pdat.field('KH_MASS')
-hmass = hdat.field('KH_MASS')
-pperiods = pdat.field('PERIOD')
-hperiods = hdat.field('PERIOD')
+def run_rossby_fit(start_p,data_rossby,data_ll,data_ull,
+    nwalkers=100,nsteps=2500):
+    """
+    Sets up the emcee ensemble sampler, runs it, prints out the results,
+    then returns the samples.
 
-ppmem = pdat.field('ADAMPMEM')
-hpmem = hdat.field('ROESER_PMEM')
-pmem_threshold=70.0
+    Input
+    -----
+    start_p : (3)
+        starting guesses for the three model parameters
+        saturation level, turnover point, and power-law slope (beta)
 
-pgood = np.where((pmass<=1.3) & (pmass>0.1) & (pbin==False) & (peqw-pueqw>0)
-        & ((ppmem>=pmem_threshold) | (ppmem<0)) & (pperiods>0))[0]
-hgood = np.where((hmass<=1.3) & (hmass>0.1) & (hbin==False)  & (heqw-hueqw>0)
-        & ((hpmem>=pmem_threshold) | (hpmem<0)) & (hperiods>0))[0]
+    data_rossby : array-like (ndata)
+        Data Rossby number values
 
-data_rossby = 10**np.append(pros[pgood],hros[hgood])
-sort_order = np.argsort(data_rossby)
-data_rossby = data_rossby[sort_order]
-#print data_rossby
-data_ll = np.append(pll[pgood],hll[hgood])
-data_ll = data_ll[sort_order]
-#print data_ll
-data_ull = np.append(pull[pgood],hull[hgood])
-data_ull = data_ull[sort_order]
-#print data_ull
+    data_ll : array-like (ndata)
+        Data activity values (L_{whatever}/L_{bol} - in my case 
+        I was using L_{Halpha}/L_{bol})
 
-#popt,pcov = curve_fit(rossby_model,rossby_no,lha_lbol,
-#    p0=np.asarray([1e-5,0.13,-1.0]),sigma=err_ll)
-#print popt
-#print pcov
+    data_ull : array-like (ndata)
+        Uncertainties in the data activity values.
 
+    Output
+    ------
+    samples : array-like (nwalkers*nsteps,3)
+        all the samples from all the emcee walkers, reshaped so there's
+        just one column per parameter
 
-ndim=3
-nwalkers=100
-nsteps=2500
-p0 = np.zeros((nwalkers,ndim))
-start_p = np.asarray([1e-4,0.1,-1.0])
-for i in range(nwalkers):
-    p0[i] = start_p + (1e-2*np.random.randn(ndim)*start_p)
+    """
+    ndim = 3
+    p0 = np.zeros((nwalkers,ndim))
 
-sampler = emcee.EnsembleSampler(nwalkers,ndim,lnprob,
-    args=[data_rossby,data_ll,data_ull])
-pos,prob,state=sampler.run_mcmc(p0,nsteps/10)
-sampler.reset()
-plt.close()
-pos,prob,state=sampler.run_mcmc(pos,nsteps)
+    # initialize the walkers in a tiny gaussian ball around the starting point
+    for i in range(nwalkers):
+        p0[i] = start_p + (1e-2*np.random.randn(ndim)*start_p)
 
+    sampler = emcee.EnsembleSampler(nwalkers,ndim,lnprob,
+        args=[data_rossby,data_ll,data_ull])
+    pos,prob,state=sampler.run_mcmc(p0,nsteps/10)
+    sampler.reset()
+    pos,prob,state=sampler.run_mcmc(pos,nsteps)
 
-def quantile(x,quantiles):
-    xsorted = sorted(x)
-    qvalues = [xsorted[int(q * len(xsorted))] for q in quantiles]
-    return zip(quantiles,qvalues)
+    sl_mcmc = quantile(sampler.flatchain[:,0],[.16,.5,.84])
+    to_mcmc = quantile(sampler.flatchain[:,1],[.16,.5,.84])
+    be_mcmc = quantile(sampler.flatchain[:,2],[.16,.5,.84])
 
-sl_mcmc = quantile(sampler.flatchain[:,0],[.16,.5,.84])
-to_mcmc = quantile(sampler.flatchain[:,1],[.16,.5,.84])
-be_mcmc = quantile(sampler.flatchain[:,2],[.16,.5,.84])
+    print 'sat_level={0:.7f} +{1:.7f}/-{2:.7f}'.format(
+        sl_mcmc[1][1],sl_mcmc[1][1]-sl_mcmc[0][1],sl_mcmc[2][1]-sl_mcmc[1][1])
+    print 'turnover={0:.3f} +{1:.3f}/-{2:.3f}'.format(
+        to_mcmc[1][1],to_mcmc[1][1]-to_mcmc[0][1],to_mcmc[2][1]-to_mcmc[1][1])
+    print 'beta={0:.3f} +{1:.3f}/-{2:.3f}'.format(
+        be_mcmc[1][1],be_mcmc[1][1]-be_mcmc[0][1],be_mcmc[2][1]-be_mcmc[1][1])
 
-print 'sat_level={0:.7f} +{1:.7f}/-{2:.7f}'.format(
-    sl_mcmc[1][1],sl_mcmc[1][1]-sl_mcmc[0][1],sl_mcmc[2][1]-sl_mcmc[1][1])
-print 'turnover={0:.3f} +{1:.3f}/-{2:.3f}'.format(
-    to_mcmc[1][1],to_mcmc[1][1]-to_mcmc[0][1],to_mcmc[2][1]-to_mcmc[1][1])
-print 'beta={0:.3f} +{1:.3f}/-{2:.3f}'.format(
-    be_mcmc[1][1],be_mcmc[1][1]-be_mcmc[0][1],be_mcmc[2][1]-be_mcmc[1][1])
+    samples = sampler.flatchain
 
+    return samples
 
+def plot_rossby(samples,data_rossby,data_ll,data_ull,
+    plotfilename=None,ylabel=r'$L_{H\alpha}/L_{bol}$'):
+    """ 
+    Plot fit results with data 
 
+    Input
+    -----
+    samples : array-like (nwalkers*nsteps,3)
+        all the samples from all the emcee walkers, reshaped so there's
+        just one column per parameter
 
-plt.figure()
-ax = plt.subplot(111)
-ax.set_xscale('log')
-ax.set_yscale('log')
-samples = sampler.chain.reshape((-1,ndim))
-xl = np.arange(0.001,2.0,0.005)
-for p in samples[np.random.randint(len(samples), size=200)]:
-    ax.plot(xl,rossby_model(p,xl),color='LightGrey')
+    data_rossby : array-like (ndata)
+        Data Rossby number values
 
-sat_level = sl_mcmc[1][1]
-turnover = to_mcmc[1][1]
-#ax.plot((0.001,turnover),(sat_level,sat_level),'k-',lw=2)
-x = np.arange(turnover,2.0,0.001)
-constant = sat_level/(turnover**-1.)
-ax.plot(x,constant*(x**-1.),'k--',lw=1.5,label=r'$\beta=\ -1$')
-constant = sat_level/(turnover**-2.1)
-ax.plot(x,constant*(x**-2.1),'k-.',lw=1.5,label=r'$\beta=\ -2.1$')
-constant = sat_level/(turnover**-2.7)
-ax.plot(x,constant*(x**-2.7),'k:',lw=2,label=r'$\beta=\ -2.7$')
+    data_ll : array-like (ndata)
+        Data activity values (L_{whatever}/L_{bol} - in my case 
+        I was using L_{Halpha}/L_{bol})
 
+    data_ull : array-like (ndata)
+        Uncertainties in the data activity values.
 
-star_color = 'BlueViolet'
-ax.errorbar(data_rossby,data_ll,data_ull,color=star_color,fmt='*',capsize=0,
-    ms=12,mec=star_color)
-ax.plot(xl,rossby_model([sl_mcmc[1][1],to_mcmc[1][1],be_mcmc[1][1]],xl),
-    'k-',lw=2,label=r'$\beta=\ {0:.1f}$'.format(be_mcmc[1][1]))
-ax.set_ylabel(r'$L_{H\alpha}/L_{bol}$',fontsize='xx-large')
-ax.set_xlabel('Ro',fontsize='x-large')
-ax.set_xlim(1e-3,2)
-ax.tick_params(labelsize='x-large')
-ax.set_xticklabels((0.001,0.01,0.1,1))
+    plotfilename : string (optional; default=None)
+        if not None, the plot will be saved using this filename
 
-handles, labels = ax.get_legend_handles_labels()
-new_handles = np.append(handles[-1],handles[0:-1])
-new_labels = np.append(labels[-1],labels[0:-1])
-ax.legend(new_handles,new_labels,loc=3,
-    title=r'$L_{H\alpha}/L_{bol}\ \propto\ Ro^{\beta}$')
+    """
 
-plt.savefig('fit_rossby.png')
-plt.savefig('fit_rossby.ps')
+    sl_mcmc = quantile(samples[:,0],[.16,.5,.84])
+    to_mcmc = quantile(samples[:,1],[.16,.5,.84])
+    be_mcmc = quantile(samples[:,2],[.16,.5,.84])
+
+    plt.figure()
+    ax = plt.subplot(111)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    # Just trying to reduce the number of plotted points...    
+    xl = np.append(np.append(0.001,np.arange(0.08,0.15,0.001)),2.0) 
+#    xl = np.arange(0.001,2.0,0.005)
+    for p in samples[np.random.randint(len(samples), size=100)]:
+        ax.plot(xl,rossby_model(p,xl),color='LightGrey')
+
+    sat_level = sl_mcmc[1][1]
+    turnover = to_mcmc[1][1]
+    x = np.asarray([turnover,2.0])
+#    x = np.arange(turnover,2.0,0.001)
+    constant = sat_level/(turnover**-1.)
+    ax.plot(x,constant*(x**-1.),'k--',lw=1.5,label=r'$\beta=\ -1$')
+    constant = sat_level/(turnover**-2.1)
+    ax.plot(x,constant*(x**-2.1),'k-.',lw=1.5,label=r'$\beta=\ -2.1$')
+    constant = sat_level/(turnover**-2.7)
+    ax.plot(x,constant*(x**-2.7),'k:',lw=2,label=r'$\beta=\ -2.7$')
 
 
-#emcee_plot(sampler.chain,labels=['sat_level','turnover','beta'])
+    star_color = 'BlueViolet'
+    ax.errorbar(data_rossby,data_ll,data_ull,color=star_color,fmt='*',capsize=0,
+        ms=12,mec=star_color)
+    ax.plot(xl,rossby_model([sl_mcmc[1][1],to_mcmc[1][1],be_mcmc[1][1]],xl),
+        'k-',lw=2,label=r'$\beta=\ {0:.1f}$'.format(be_mcmc[1][1]))
+    ax.set_ylabel(ylabel,fontsize='xx-large')
+    ax.set_xlabel('R_o',fontsize='x-large')
+    ax.set_xlim(1e-3,2)
+    ax.tick_params(labelsize='x-large')
+    ax.set_xticklabels((0.001,0.01,0.1,1))
 
-triangle.corner(sampler.chain.reshape((-1,ndim)),labels=['sat_level (x10^-4)','turnover','beta'],quantiles=[0.16,0.50,0.84])
+    handles, labels = ax.get_legend_handles_labels()
+    new_handles = np.append(handles[-1],handles[0:-1])
+    new_labels = np.append(labels[-1],labels[0:-1])
+    ax.legend(new_handles,new_labels,loc=3,
+        title=ylabel+r'\ \propto\ R_o^{\beta}$')
 
-ax = plt.subplot(337)
-xticks = ax.get_xticks()
-new_labels = []
-for xt in xticks:
-    new_labels =np.append(new_labels,str(xt*10000))
-ax.set_xticklabels(new_labels)
-plt.savefig('fit_rossby_corner.png')
-plt.savefig('fit_rossby_corner.ps')
+    if plotfilename!=None:
+        plt.savefig(plotfilename)
 
-outfile = open('fit_rossby.pkl','wb')
-cPickle.dump(samples,outfile)
-outfile.close()
