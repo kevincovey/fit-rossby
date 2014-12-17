@@ -213,3 +213,19 @@ def plot_rossby(samples,data_rossby,data_ll,data_ull,
     if plotfilename!=None:
         plt.savefig(plotfilename)
 
+def print_pdf(cropchain,filename,col_names=["sat_level,turnover,beta"]):
+    f = open(filename,"w")
+    f.write("# {}".format(col_names[0]))
+    for cname in col_names[1:]:
+        f.write(",{}".format(cname))
+    f.write("\n")
+    
+    for i,p in enumerate(cropchain):
+        #print p
+        f.write(str(p[0]))
+        for this_p in p[1:]:
+            f.write(",{}".format(this_p))
+        f.write("\n")
+
+    f.close()
+

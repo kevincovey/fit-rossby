@@ -4,7 +4,6 @@ import numpy as np
 import cPickle
 import triangle
 import matplotlib.pyplot as plt
-#from emcee_plot import emcee_plot
 
 from fit_rossby import *
 
@@ -25,7 +24,7 @@ samples = run_rossby_fit(start_p,data_rossby,data_ll,data_ull)
 plot_rossby(samples,data_rossby,data_ll,data_ull)
 
 # Make a triangle plot 
-# (this won't be any good for publication - .ps/.eps can't take transparency)
+# (this won't be any good for publication - .ps/.eps won't do transparency)
 triangle.corner(samples,labels=['sat_level (x10^-4)','turnover','beta'],quantiles=[0.16,0.50,0.84])
 # adjust the ticklabels for easier reading
 ax = plt.subplot(337)
@@ -36,12 +35,12 @@ for xt in xticks:
 ax.set_xticklabels(new_labels)
 
 # Uncomment to save the plot
-#plt.savefig('fit_rossby_corner.png')
+plt.savefig('fit_rossby_corner.png')
 
-
-
-# Save the sampler functions to a pkl file to be accessed later
-# (could also write to a text file)
-outfile = open('fit_rossby.pkl','wb')
+# Save the sample positions to a pkl file to be accessed later
+outfile = open('fit_rossby_samples.pkl','wb')
 cPickle.dump(samples,outfile)
 outfile.close()
+
+# Write to a text file for posting online :)
+print_pdf(samples,"fit_rossby_samples.csv")
