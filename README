@@ -1,0 +1,5 @@
+Code for fitting a saturation-type model for activity vs. Rossby number (period/convective overturn time).  The code was designed for Halpha activity (L_Halpha/L_bol).  
+
+For the version of the code used in Douglas et al. (2014), see the douglas2014 branch.  The master branch has been updated to be used by anyone with any type of activity; all the appropriate calls are in example_script.py
+
+Licensed under the MIT license; see the LICENSE.txt file for more details.
