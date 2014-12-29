@@ -1,4 +1,5 @@
-# Created by Stephanie T. Douglas in 2014
+# Copyright (c) 2012-2014 Stephanie T. Douglas
+# under the MIT License (see LICENSE.txt for full details)
 
 import numpy as np
 import cPickle
