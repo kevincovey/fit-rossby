@@ -62,30 +62,6 @@ def dual_power_law(parameters,x):
 
     return Log_LxLbol
 
-def dual_lnprior_periods_fixSlope(parameters, low_slope, high_slope):
-    """
-    simple method of setting (flat) priors on model parameters
-
-    If input parameters are within the priors, a (constant) likelihood is returned; 
-    if the input parameters are outside the priors, a negative infinity is returned
-    to indicate an unacceptable fit.
-
-    Input
-    -----
-    parameters : array-like (3)
-        parameters for the model: saturation level (expressed as Log L_{whatever}/L_{bol}, turnover_Ro, beta
-
-    Output
-    ------
-     : value
-        0.0 if parameters are within priors; -np.inf if not.
-    """
-    
-    intercept_constant, turnover, beta_1, beta_2, lnf = parameters[0], parameters[1], parameters[2], parameters[3], parameters[4]
-    if 20 < intercept_constant < 40 and 2 < turnover < 50 and -4 < beta_1 < 2 and  low_slope < beta_2 < high_slope and -10.0 < lnf < 1.0:
-        return 0.0
-    return -np.inf
-
 def dual_lnprior_periods(parameters):
     """
     simple method of setting (flat) priors on model parameters
@@ -173,7 +149,7 @@ def dual_lnlike(parameters, rossby_no, log_LxLbol ,err_ll):
 
     return ln_like
 
-def dual_lnprob_periods(parameters, rossby_no, log_LxLbol, err_ll, constrain = False, **kwargs):
+def dual_lnprob_periods(parameters, rossby_no, log_LxLbol, err_ll):
     """ 
     Calculates the natural log of the probability of a model, given a set of priors, the defined likelihood function, and the observed data
 
@@ -198,13 +174,7 @@ def dual_lnprob_periods(parameters, rossby_no, log_LxLbol, err_ll, constrain = F
        (by adding prior and model likelihood terms, which are 
         calculated by lnprior() and lnlike() respectively)
     """
-    lowSlope = kwargs.get('lowSlope', None)
-    highSlope = kwargs.get('highSlope', None)
-
-    if (constrain == False):
-        lp = dual_lnprior_periods(parameters)
-    else:
-        lp = dual_lnprior_periods_fixSlope(parameters, lowSlope, highSlope)
+    lp = dual_lnprior_periods(parameters)
     if not np.isfinite(lp):
         return -np.inf
     return lp + dual_lnlike(parameters, rossby_no, log_LxLbol, err_ll)
@@ -242,7 +212,7 @@ def dual_lnprob(parameters, rossby_no, log_LxLbol, err_ll):
 
 
 def run_dual_fit(start_p, data_rossby, data_ll, data_ull,
-    nwalkers=256,nsteps=40000, constrain = False, **kwargs):
+    nwalkers=256,nsteps=40000):
     """
     Sets up the emcee ensemble sampler, runs it, prints out the results,
     then returns the samples.
@@ -270,9 +240,6 @@ def run_dual_fit(start_p, data_rossby, data_ll, data_ull,
         just one column per parameter
 
     """
-    lowSlope = kwargs.get('lowSlope', None)
-    highSlope = kwargs.get('highSlope', None)
-
 
     ndim = 5
     p0 = np.zeros((nwalkers,ndim))
@@ -315,7 +282,7 @@ def run_dual_fit(start_p, data_rossby, data_ll, data_ull,
     return samples
 
 def run_dual_fit_periods(start_p, data_rossby, data_ll, data_ull,
-    nwalkers=256,nsteps=10000, Constrain = False, **kwargs):
+    nwalkers=256,nsteps=10000):
     """
     Sets up the emcee ensemble sampler, runs it, prints out the results,
     then returns the samples.
@@ -343,8 +310,6 @@ def run_dual_fit_periods(start_p, data_rossby, data_ll, data_ull,
         just one column per parameter
 
     """
-    lowSlope = kwargs.get('lowSlope', None)
-    highSlope = kwargs.get('highSlope', None)
 
     ndim = 5
     p0 = np.zeros((nwalkers,ndim))
