@@ -106,7 +106,7 @@ def dual_lnprior(parameters):
     """
     
     intercept_constant, turnover, beta_1, beta_2, lnf = parameters[0], parameters[1], parameters[2], parameters[3], parameters[4]
-    if -99 < intercept_constant < 100 and 0.05 < turnover < 0.5 and -3 < beta_1 < 2 and  -3 < beta_2 < 1 and -10.0 < lnf < 1.0:
+    if -99 < intercept_constant < 100 and 0.05 < turnover < 0.5 and -1 < beta_1 < 1 and  -4 < beta_2 < -1 and -10.0 < lnf < 1.0:
         return 0.0
     return -np.inf
 
@@ -414,7 +414,7 @@ def plot_dual_fit(samples,data_rossby,data_ll,data_ull,plotfilename=None,ylabel=
     #print('model: ')
     #print(
     ax.plot(xl,dual_power_law([ic_mcmc[1][1],to_mcmc[1][1],beta1_mcmc[1][1],beta2_mcmc[1][1]],xl),
-        'k-',lw=2,label=r'$\beta1=\ {0:.1f}$'.format(beta1_mcmc[1][1]))
+        'k-',lw=2,label=r'$\beta1=\ {0:.2f}$'.format(beta1_mcmc[1][1])+"\n"+r'$\beta2=\ {0:.2f}$'.format(beta2_mcmc[1][1]) )
     ax.set_ylabel(ylabel,fontsize='xx-large')
     ax.set_xlabel('R$_o$',fontsize='x-large')
     ax.set_xlim(1e-3,2)

@@ -110,6 +110,32 @@ def dual_lnprior_periods(parameters):
         return 0.0
     return -np.inf
 
+def dual_lnprior_fixSlope(parameters, low_slope, high_slope):
+    """
+    simple method of setting (flat) priors on model parameters
+
+    If input parameters are within the priors, a (constant) likelihood is returned; 
+    if the input parameters are outside the priors, a negative infinity is returned
+    to indicate an unacceptable fit.
+
+    Input
+    -----
+    parameters : array-like (3)
+        parameters for the model: saturation level (expressed as Log L_{whatever}/L_{bol}, turnover_Ro, beta
+
+    Output
+    ------
+     : value
+        0.0 if parameters are within priors; -np.inf if not.
+    """
+    #print('slope bounds are: ', low_slope, high_slope)
+    intercept_constant, turnover, beta_1, beta_2, lnf = parameters[0], parameters[1], parameters[2], parameters[3], parameters[4]
+    if -99 < intercept_constant < 100 and 0.05 < turnover < 0.5 and -1 < beta_1 < 1 and  low_slope < beta_2 < high_slope and -10.0 < lnf < 1.0:
+#    if 20 < intercept_constant < 40 and 2 < turnover < 50 and -4 < beta_1 < 2 and  low_slope < beta_2 < high_slope and -10.0 < lnf < 1.0:
+        return 0.0
+    return -np.inf
+
+
 def dual_lnprior(parameters):
     """
     simple method of setting (flat) priors on model parameters
@@ -130,10 +156,9 @@ def dual_lnprior(parameters):
     """
     
     intercept_constant, turnover, beta_1, beta_2, lnf = parameters[0], parameters[1], parameters[2], parameters[3], parameters[4]
-    if -99 < intercept_constant < 100 and 0.05 < turnover < 0.5 and -3 < beta_1 < 2 and  -3 < beta_2 < 1 and -10.0 < lnf < 1.0:
+    if -99 < intercept_constant < 100 and 0.05 < turnover < 0.5 and -1 < beta_1 < 1 and  -4 < beta_2 < -1 and -10.0 < lnf < 1.0:
         return 0.0
     return -np.inf
-
 
 def dual_lnlike(parameters, rossby_no, log_LxLbol ,err_ll): 
     """ 
@@ -267,8 +292,38 @@ def dual_lnprob(parameters, rossby_no, log_LxLbol, err_ll):
         return -np.inf
     return lp + dual_lnlike(parameters, rossby_no, log_LxLbol, err_ll)
 
+def dual_lnprob_fixed(parameters, rossby_no, log_LxLbol, err_ll, low_slope, high_slope):
+    """ 
+    Calculates the natural log of the probability of a model, given a set of priors, the defined likelihood function, and the observed data
 
-def run_dual_fit(start_p, data_rossby, data_ll, data_ull,
+    Input
+    -----
+    parameters : array-like (4)
+        parameters for the model: saturation level, turnover, beta, multiplicative error inflator
+
+    rossby_no : array-like 
+        Data Rossby number values
+
+    log_LxLbol : array-like 
+        Data activity values (L_{whatever}/L_{bol} - in the original case, LxLbol
+
+    error_ll : array-like
+        Uncertainties in the data activity values.
+
+    Output
+    ------
+    lnprob : float
+       natural log of the likelihood of the model given the data and the priors 
+       (by adding prior and model likelihood terms, which are 
+        calculated by lnprior() and lnlike() respectively)
+    """
+    #lp = dual_lnprior(parameters)
+    lp = dual_lnprior_fixSlope(parameters, low_slope, high_slope)
+    if not np.isfinite(lp):
+        return -np.inf
+    return lp + dual_lnlike(parameters, rossby_no, log_LxLbol, err_ll)
+
+def run_dual_fit_constrained(start_p, data_rossby, data_ll, data_ull, lowSlope, highSlope,
     nwalkers=256,nsteps=40000):
     """
     Sets up the emcee ensemble sampler, runs it, prints out the results,
@@ -305,8 +360,8 @@ def run_dual_fit(start_p, data_rossby, data_ll, data_ull,
     for i in range(nwalkers):
         p0[i] = start_p + (1e-1*np.random.randn(ndim)*start_p)
 
-    sampler = emcee.EnsembleSampler(nwalkers,ndim,dual_lnprob,
-        args=[data_rossby,data_ll,data_ull])
+    sampler = emcee.EnsembleSampler(nwalkers,ndim,dual_lnprob_fixed,
+        args=[data_rossby,data_ll,data_ull,lowSlope,highSlope])
     pos,prob,state=sampler.run_mcmc(p0,nsteps/2)
     sampler.reset()
     pos,prob,state=sampler.run_mcmc(pos,nsteps)
@@ -337,6 +392,36 @@ def run_dual_fit(start_p, data_rossby, data_ll, data_ull,
     samples = sampler.flatchain
 
     return samples
+
+    pos,prob,state=sampler.run_mcmc(pos,nsteps)
+
+    ic_mcmc = quantile(sampler.flatchain[:,0],[.16,.5,.84])
+
+    #sl_mcmc.info()
+    #print(sl_mcmc)
+    to_mcmc = quantile(sampler.flatchain[:,1],[.16,.5,.84])
+    #print(to_mcmc)
+    beta1_mcmc = quantile(sampler.flatchain[:,2],[.16,.5,.84])
+    beta2_mcmc = quantile(sampler.flatchain[:,3],[.16,.5,.84])
+    #print(be_mcmc)
+    var_mcmc = quantile(sampler.flatchain[:,4],[.16,.5,.84])
+
+    
+    print('intercept constant={0:.7f} +{1:.7f}/-{2:.7f}'.format(
+        ic_mcmc[1][1],ic_mcmc[1][1]-ic_mcmc[0][1],ic_mcmc[2][1]-ic_mcmc[1][1]))
+    print('turnover={0:.3f} +{1:.3f}/-{2:.3f}'.format(
+        to_mcmc[1][1],to_mcmc[1][1]-to_mcmc[0][1],to_mcmc[2][1]-to_mcmc[1][1]))
+    print('beta1={0:.3f} +{1:.3f}/-{2:.3f}'.format(
+        beta1_mcmc[1][1],beta1_mcmc[1][1]-beta1_mcmc[0][1],beta1_mcmc[2][1]-beta1_mcmc[1][1]))
+    print('beta2={0:.3f} +{1:.3f}/-{2:.3f}'.format(
+        beta2_mcmc[1][1],beta2_mcmc[1][1]-beta2_mcmc[0][1],beta2_mcmc[2][1]-beta2_mcmc[1][1]))
+    print('var={0:.3f} +{1:.3f}/-{2:.3f}'.format(
+        var_mcmc[1][1],var_mcmc[1][1]-var_mcmc[0][1],var_mcmc[2][1]-var_mcmc[1][1]))
+
+    samples = sampler.flatchain
+
+    return samples
+
 
 def run_dual_fit_periods_constrained(start_p, data_rossby, data_ll, data_ull, lowSlope, highSlope,
     nwalkers=256,nsteps=10000):
@@ -470,7 +555,7 @@ def plot_dual_fit(samples,data_rossby,data_ll,data_ull,plotfilename=None,ylabel=
     #print('model: ')
     #print(
     ax.plot(xl,dual_power_law([ic_mcmc[1][1],to_mcmc[1][1],beta1_mcmc[1][1],beta2_mcmc[1][1]],xl),
-        'k-',lw=2,label=r'$\beta1=\ {0:.1f}$'.format(beta1_mcmc[1][1]))
+        'k-',lw=2,label=r'$\beta1=\ {0:.2f}$'.format(beta1_mcmc[1][1])+"\n"+r'$\beta2=\ {0:.2f}$'.format(beta2_mcmc[1][1]) )
     ax.set_ylabel(ylabel,fontsize='xx-large')
     ax.set_xlabel('R$_o$',fontsize='x-large')
     ax.set_xlim(1e-3,2)
